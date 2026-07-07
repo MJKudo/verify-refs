@@ -2,6 +2,8 @@
 
 A Claude Code command that verifies the consistency between references and manuscript claims using a 3-stage verification pipeline.
 
+> **v3.0** — metadata verification now uses authoritative scholarly APIs (Crossref, DOI content negotiation, DOI Handle resolution, OpenAlex, Semantic Scholar, Unpaywall) instead of generic web search, and adds retraction/correction checking, multi-source cross-validation with a confidence score, stricter author matching, verbatim-quote-with-location evidence for semantic judgments, a 4-value alignment scale, and a general topic-relevance fallback when no field keywords are set. The 3-stage shape, cascading full-text retrieval, and iterative fix loop are unchanged.
+
 ## The Problem
 
 When AI assists in writing research manuscripts, references often contain "plausible inaccuracies" -- DOIs that exist, papers that are real, but manuscript claims that subtly diverge from the actual paper content. In our initial test, **3 out of 6 references had critical errors** (wrong title, DOI pointing to a completely different paper, slot-die paper cited as inkjet).
@@ -9,20 +11,22 @@ When AI assists in writing research manuscripts, references often contain "plaus
 ## How It Works
 
 ```
-Stage 1: DOI Metadata Verification (WebSearch)
-  Does the DOI actually point to the paper described in the manuscript?
-  -> Catches title mismatches, author errors, wrong papers
+Stage 1: Authoritative Metadata Verification (Crossref / DOI content negotiation / Handle API / OpenAlex / Semantic Scholar)
+  Does the DOI resolve, and does it point to the paper described in the manuscript?
+  -> Catches fabricated DOIs, title mismatches, author errors, wrong papers
+  -> Cross-validates across sources (confidence score) and flags RETRACTED works
 
-Stage 2: Field-Specific Classification (keyword rules)
-  Does the paper's methodology match the citation context?
-  -> Catches method confusion (e.g., slot-die cited as inkjet)
+Stage 2: Field / Topic Relevance (keyword rules, or general relevance fallback)
+  Does the paper's methodology/topic match the citation context?
+  -> Catches method confusion (e.g., slot-die cited as inkjet) and off-topic citations
 
-Stage 3: Semantic Alignment (AI judgment + full-text retrieval)
+Stage 3: Semantic Alignment (AI judgment grounded in verbatim source quotes + full-text retrieval)
   Does the manuscript's claim accurately reflect the paper's content?
-  -> Catches numerical errors, misrepresented findings, severity assessment
+  -> 4-value alignment (Supported / Partially / Unsupported / Uncertain) with confidence,
+     numerical cross-check, and severity assessment
 ```
 
-Each reference gets a verdict: **PASS**, **REVIEW**, or **FAIL**.
+Each reference gets a verdict: **PASS**, **REVIEW**, **FAIL**, or **RETRACTED**.
 
 The pipeline runs iteratively (Verify-Fix-Verify loop) until all references pass or the author has reviewed all flagged items.
 
@@ -50,7 +54,7 @@ Or manually copy `verify-refs.md` to your `~/.claude/commands/` directory (globa
    Group B (confused with): "TALENs", "zinc finger"
    Group C (confused with): "base editing", "prime editing"
    ```
-   If you skip this, Stage 2 is simply bypassed.
+   If you skip this, Stage 2 falls back to a general topic-relevance check (it is no longer bypassed entirely).
 
 3. **Run in Claude Code:**
    ```
@@ -80,7 +84,7 @@ Plus:
 Stage 3 attempts to retrieve paper full text for more accurate verification, using a cascading fallback:
 
 1. **Local PDF** (`./references/` or `./refs/` directory) -- highest reliability
-2. **Publisher OA HTML** (via DOI redirect)
+2. **OA full text** located via Unpaywall / OpenAlex (preferred over scraping), then publisher OA HTML
 3. **Supplementary Information** (often freely available even for paywalled papers)
 4. **Author self-archive** (ResearchGate, arXiv, institutional repositories)
 5. **Abstract only** (from WebSearch results)
@@ -160,8 +164,9 @@ LaTeX multi-file manuscripts (`\input{}`, `\include{}`) are supported. The comma
 ## Requirements
 
 - [Claude Code](https://claude.ai/code) (CLI, desktop app, or IDE extension)
-- Internet connection (for WebSearch/WebFetch in Stage 1-3)
+- Internet connection (Bash `curl` + WebSearch/WebFetch for the scholarly APIs in Stage 1-3)
 - Manuscript in Markdown (`.md`) or LaTeX (`.tex`) format
+- Optional: a contact email in the command's User Configuration (required to use Unpaywall; enables API "polite pool" for Crossref/OpenAlex)
 
 ## License
 
